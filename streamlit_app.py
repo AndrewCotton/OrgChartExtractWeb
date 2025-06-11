@@ -5,11 +5,10 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.enum.dml import MSO_FILL_TYPE
 import csv
 import os
-import io  # Required for in-memory file handling
+import io # Required for in-memory file handling
 import traceback
 
-
-# --- Helper Functions (Copied from your original script, no changes needed) ---
+# --- Helper Functions (No changes needed) ---
 
 def get_shape_fill_color_info(shape):
     """
@@ -49,7 +48,6 @@ def get_shape_fill_color_info(shape):
         color_info = "Fill Info Error (General)"
     return color_info
 
-
 def get_all_text_from_shape(shape):
     """
     Extracts and concatenates all text from a shape, whether it's in a text frame or a table.
@@ -68,15 +66,14 @@ def get_all_text_from_shape(shape):
                     text_parts.append(cell.text.strip())
     return " | ".join(text_parts)
 
-
-# --- Core Processing Functions (Revised for Streamlit) ---
+# --- Core Processing Functions ---
 
 def generate_text_details_tsv(uploaded_file):
     """
-    MODIFIED: Loads a PowerPoint file from an in-memory object, extracts detailed text data,
+    Loads a PowerPoint file from an in-memory object, extracts detailed text data,
     and returns it as a string in TSV format.
     """
-    output = io.StringIO()  # Create an in-memory text buffer
+    output = io.StringIO()
     tsv_writer = csv.writer(output, delimiter='\t')
 
     try:
@@ -118,9 +115,9 @@ def generate_text_details_tsv(uploaded_file):
 def generate_combined_shape_details_tsv(uploaded_file):
     """
     MODIFIED: Loads a PowerPoint file from an in-memory object, extracts shape details,
-    and returns it as a string in TSV format.
+    and returns it as a string in TSV format. Only includes shapes that contain text.
     """
-    output = io.StringIO()  # Create an in-memory text buffer
+    output = io.StringIO()
     csv_headers = ["slide_index", "shape_id", "shape_name", "shape_type", "color",
                    "x_coordinate_emu", "y_coordinate_emu", "width_emu", "height_emu", "text"]
     tsv_writer = csv.DictWriter(output, fieldnames=csv_headers, delimiter='\t')
@@ -128,7 +125,6 @@ def generate_combined_shape_details_tsv(uploaded_file):
 
     shape_details_list = []
     try:
-        # IMPORTANT: Reset read position of the file-like object for the second parse
         uploaded_file.seek(0)
         prs = Presentation(uploaded_file)
 
@@ -138,19 +134,24 @@ def generate_combined_shape_details_tsv(uploaded_file):
                         (not hasattr(MSO_SHAPE_TYPE, 'LINE') and shape.shape_type == 13):
                     continue
 
-                shape_type_str = next((m.name for m in MSO_SHAPE_TYPE if m.value == shape.shape_type),
-                                      f"Unknown ({shape.shape_type})")
+                # Get all text from the shape
+                concatenated_text = get_all_text_from_shape(shape)
 
-                shape_details_list.append({
-                    "slide_index": slide_idx, "shape_id": shape.shape_id,
-                    "shape_name": shape.name or "Unnamed Shape", "shape_type": shape_type_str,
-                    "color": get_shape_fill_color_info(shape),
-                    "x_coordinate_emu": shape.left if hasattr(shape, 'left') else 'N/A',
-                    "y_coordinate_emu": shape.top if hasattr(shape, 'top') else 'N/A',
-                    "width_emu": shape.width if hasattr(shape, 'width') else 'N/A',
-                    "height_emu": shape.height if hasattr(shape, 'height') else 'N/A',
-                    "text": get_all_text_from_shape(shape)
-                })
+                # *** CHANGE: Only proceed if the shape actually contains text ***
+                if concatenated_text:
+                    shape_type_str = next((m.name for m in MSO_SHAPE_TYPE if m.value == shape.shape_type),
+                                          f"Unknown ({shape.shape_type})")
+
+                    shape_details_list.append({
+                        "slide_index": slide_idx, "shape_id": shape.shape_id,
+                        "shape_name": shape.name or "Unnamed Shape", "shape_type": shape_type_str,
+                        "color": get_shape_fill_color_info(shape),
+                        "x_coordinate_emu": shape.left if hasattr(shape, 'left') else 'N/A',
+                        "y_coordinate_emu": shape.top if hasattr(shape, 'top') else 'N/A',
+                        "width_emu": shape.width if hasattr(shape, 'width') else 'N/A',
+                        "height_emu": shape.height if hasattr(shape, 'height') else 'N/A',
+                        "text": concatenated_text # Use the variable
+                    })
 
         tsv_writer.writerows(shape_details_list)
 
@@ -167,7 +168,7 @@ def generate_combined_shape_details_tsv(uploaded_file):
 st.set_page_config(page_title="PPTX Element Extractor", layout="centered")
 st.title("PowerPoint Element Extractor")
 st.write(
-    "Upload a PowerPoint (.pptx) file to extract detailed information about its text and shapes into downloadable TSV files. TSV stands for tab separated values. These files are similar to csv files but use a tab as the separator instead of a comma.")
+    "Upload your PowerPoint (.pptx) file to extract detailed information about its text and shapes into downloadable TSV files. TSV stands for tab separated values. These files are similar to csv files but use a tab as the separator instead of a comma.")
 
 uploaded_file = st.file_uploader("Choose a .pptx file", type="pptx")
 
@@ -175,7 +176,6 @@ if uploaded_file is not None:
     st.success(f"File '{uploaded_file.name}' uploaded successfully!")
 
     with st.spinner('Processing your presentation... This may take a moment.'):
-        # Generate both TSV files in memory
         text_tsv_content = generate_text_details_tsv(uploaded_file)
         shape_tsv_content = generate_combined_shape_details_tsv(uploaded_file)
 
@@ -183,7 +183,6 @@ if uploaded_file is not None:
 
     base_filename = os.path.splitext(uploaded_file.name)[0]
 
-    # Display download buttons if content was generated successfully
     if text_tsv_content:
         st.download_button(
             label="Download Text Details (TSV)",
